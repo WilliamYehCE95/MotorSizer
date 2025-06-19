@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Professional Motion Control Sizing Tool with Visualization</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root { --primary-color: #007bff; --light-gray: #f4f7f9; --dark-gray: #333; --medium-gray: #555; --border-color: #ccc; --pass-bg: #d4edda; --pass-color: #155724; --fail-bg: #f8d7da; --fail-color: #721c24; --warn-bg: #fff3cd; --warn-color: #856404; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: var(--light-gray); display: flex; justify-content: center; align-items: flex-start; padding: 2rem; }
+        .main-container { display: flex; flex-direction: row; gap: 2rem; width: 100%; max-width: 1400px; }
+        .left-panel { flex: 2.5; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        .right-panel { flex: 1.5; background: #fff; padding: 2rem; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.1); position: sticky; top: 2rem; }
+        h1, h2, h3 { color: var(--dark-gray); border-bottom: 2px solid var(--primary-color); padding-bottom: 0.5rem; }
+        h3 { border-bottom-width: 1px; }
+        .grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1.5rem; }
+        .input-group { display: flex; flex-direction: column; }
+        label { font-weight: 600; margin-bottom: 0.5rem; color: var(--medium-gray); font-size: 0.9rem; }
+        input, select { padding: 0.75rem; border: 1px solid var(--border-color); border-radius: 4px; font-size: 1rem; background-color: #fff; }
+        input[readonly] { background-color: #e9ecef; cursor: not-allowed; }
+        button { grid-column: span 2; padding: 1rem; font-size: 1.1rem; font-weight: bold; color: #fff; background-color: var(--primary-color); border: none; border-radius: 4px; cursor: pointer; transition: background-color 0.3s; margin-top: 1rem; }
+        button:hover { background-color: #0056b3; }
+        .hidden { display: none; }
+        .results-container { margin-top: 2rem; }
+        .result-item { padding: 1rem; margin-bottom: 0.75rem; border-radius: 4px; display: flex; justify-content: space-between; align-items: center; font-size: 1.1rem; border-left: 5px solid; }
+        .pass { background-color: var(--pass-bg); color: var(--pass-color); border-left-color: var(--pass-color); }
+        .fail { background-color: var(--fail-bg); color: var(--fail-color); border-left-color: var(--fail-color); }
+        .warning { margin-top: 1rem; padding: 1rem; background-color: var(--warn-bg); color: var(--warn-color); border-radius: 4px; border-left: 5px solid var(--warn-color); }
+        .spec-panel .spec-item { display: flex; justify-content: space-between; padding: 0.5rem 0; border-bottom: 1px solid #eee; font-size: 0.9rem;}
+        .spec-panel .spec-item:last-child { border-bottom: none; }
+        .spec-panel .spec-label { color: var(--medium-gray); }
+        .spec-panel .spec-value { font-weight: bold; color: var(--dark-gray); }
+        .details-grid { display: grid; grid-template-columns: 1fr; gap: 0.5rem; background: #f8f9fa; padding: 1rem; border-radius: 5px; margin-top: 1rem; }
+        #chart-container { margin-top: 2rem; }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="left-panel">
+            <h1>Linear Motor Sizing Tool V.00</h1>
+            
+            <section id="system-config">
+                <h2>1. System & Motor Configuration</h2>
+                <div class="grid">
+                    <div class="input-group"><label for="motor_select">Motor Model</label><select id="motor_select" onchange="updateMotorSelection()"></select></div>
+                    <div class="input-group"><label for="drive_voltage">Drive Bus Voltage [VDC]</label><input id="drive_voltage" type="number" value="320"></div>
+                </div>
+            </section>
+
+            <section id="load-config">
+                <h2>2. Application Load & Environment</h2>
+                <div class="grid">
+                    <div class="input-group"><label for="load_mass">External Load Mass [kg]</label><input id="load_mass" type="number" value="10"></div>
+                    <div class="input-group"><label for="coil_weight">Coil Weight [kg]</label><input id="coil_weight" type="number" readonly></div>
+                    <div class="input-group"><label for="friction">Coefficient of Friction [μ]</label><input id="friction" type="number" value="0.02"></div>
+                    <div class="input-group"><label for="angle">Angle of Incline [degrees]</label><input id="angle" type="number" value="0"></div>
+                    <div class="input-group"><label for="ambient_temp">Ambient Temperature [°C]</label><input id="ambient_temp" type="number" value="25"></div>
+                </div>
+            </section>
+
+            <section id="motion-profile">
+                <h2>3. Motion Profile Definition</h2>
+                <div class="grid">
+                    <div class="input-group"><label for="calc_method">Calculation Method</label><select id="calc_method" onchange="updateInputFields()"></select></div>
+                    <div class="input-group"><label for="profile_type">Ramp Type</label><select id="profile_type"><option value="trapezoidal">Trapezoidal</option><option value="sinusoidal">Sinusoidal (S-Curve)</option></select></div>
+                </div>
+                <div id="motion-inputs-grid" class="grid" style="margin-top: 1.5rem;"></div>
+            </section>
+            
+            <button onclick="calculate()">Calculate & Size Motor</button>
+            
+            <div id="results" class="results-container hidden">
+                <h2>4. Sizing Verdict</h2>
+                <div id="final_verdict" class="result-item"></div>
+                <div id="accuracy_warning" class="warning hidden"></div>
+            </div>
+        </div>
+
+        <div class="right-panel">
+            <h2>Motor Parameters</h2>
+            <div class="spec-panel" id="spec-panel"></div>
+            <div id="details_container" class="hidden">
+                <h2>Sizing Analysis</h2>
+                <div class="details-grid">
+                    <div id="peak_force_result" class="result-item"></div>
+                    <div id="rms_force_result" class="result-item"></div>
+                    <div id="temp_result" class="result-item"></div>
+                    <div id="voltage_result" class="result-item"></div>
+                </div>
+            </div>
+            <div id="chart-container" class="hidden">
+                <h2>Velocity-Time Curve</h2>
+                <canvas id="velocityChart"></canvas>
+            </div>
+        </div>
+    </div>
+<script>
+// --- DATABASE ---
+const motorDatabase = {
+    "BLM-142B": { peak_force: 692.7, continuous_force: 110.5, coil_weight: 0.60, motor_constant: 10.9, thermal_resistance: 0.54, force_constant: 40.0, bemf_constant: 46.2, resistance: 4.8 }, "BLM-203B": { peak_force: 1006.4, continuous_force: 153.3, coil_weight: 0.90, motor_constant: 13.0, thermal_resistance: 0.44, force_constant: 46.5, bemf_constant: 53.7, resistance: 3.8 }, "BLM-264B": { peak_force: 1206.6, continuous_force: 197.2, coil_weight: 1.10, motor_constant: 15.6, thermal_resistance: 0.34, force_constant: 47.7, bemf_constant: 55.1, resistance: 2.2 }, "BLM-325B": { peak_force: 1328.6, continuous_force: 230.7, coil_weight: 1.40, motor_constant: 17.5, thermal_resistance: 0.31, force_constant: 48.0, bemf_constant: 55.4, resistance: 1.8 }, "BLM-386B": { peak_force: 1590.4, continuous_force: 257.3, coil_weight: 1.70, motor_constant: 19.1, thermal_resistance: 0.28, force_constant: 49.6, bemf_constant: 57.3, resistance: 1.6 }, "BLMC-92": { peak_force: 300.6, continuous_force: 44.5, coil_weight: 0.16, motor_constant: 6.9, thermal_resistance: 1.05, force_constant: 16.5, bemf_constant: 19.1, resistance: 1.7 }, "BLMC-142": { peak_force: 481.2, continuous_force: 77.7, coil_weight: 0.26, motor_constant: 9.9, thermal_resistance: 0.66, force_constant: 22.8, bemf_constant: 26.3, resistance: 1.5 }, "BLMC-192": { peak_force: 618.8, continuous_force: 106.7, coil_weight: 0.34, motor_constant: 12.0, thermal_resistance: 0.52, force_constant: 25.4, bemf_constant: 29.3, resistance: 1.1 }, "BLMC-267": { peak_force: 736.0, continuous_force: 123.5, coil_weight: 0.52, motor_constant: 13.0, thermal_resistance: 0.43, force_constant: 23.3, bemf_constant: 26.9, resistance: 0.76 }, "BLMH-142": { peak_force: 1082.7, continuous_force: 150.0, coil_weight: 1.10, motor_constant: 12.3, thermal_resistance: 0.42, force_constant: 44.8, bemf_constant: 51.7, resistance: 3.5 }, "BLMH-262": { peak_force: 1748.6, continuous_force: 266.2, coil_weight: 2.10, motor_constant: 16.5, thermal_resistance: 0.26, force_constant: 53.6, bemf_constant: 61.9, resistance: 2.0 }, "BLMH-382": { peak_force: 2195.0, continuous_force: 357.9, coil_weight: 3.10, motor_constant: 19.3, thermal_resistance: 0.19, force_constant: 59.4, bemf_constant: 68.6, resistance: 1.5 }, "BLMX-382": { peak_force: 3887.0, continuous_force: 537.0, coil_weight: 3.40, motor_constant: 24.1, thermal_resistance: 0.16, force_constant: 56.5, bemf_constant: 65.2, resistance: 0.61 }, "BLMX-502": { peak_force: 4252.0, continuous_force: 601.0, coil_weight: 4.45, motor_constant: 24.3, thermal_resistance: 0.12, force_constant: 57.0, bemf_constant: 65.8, resistance: 0.55 }, "BLMUC-79": { peak_force: 125.4, continuous_force: 12.1, coil_weight: 0.10, motor_constant: 3.1, thermal_resistance: 4.07, force_constant: 13.9, bemf_constant: 16.0, resistance: 4.1 }, "BLMUC-95": { peak_force: 161.9, continuous_force: 15.2, coil_weight: 0.12, motor_constant: 3.9, thermal_resistance: 3.65, force_constant: 16.8, bemf_constant: 19.4, resistance: 4.1 }, "BLMUC-111": { peak_force: 187.6, continuous_force: 20.2, coil_weight: 0.14, motor_constant: 4.4, thermal_resistance: 2.76, force_constant: 17.8, bemf_constant: 20.6, resistance: 3.2 }, "BLMUC-143": { peak_force: 231.8, continuous_force: 26.3, coil_weight: 0.20, motor_constant: 5.4, thermal_resistance: 2.13, force_constant: 20.8, bemf_constant: 24.0, resistance: 2.7 },
+};
+const paramLabels = { peak_force: "Peak Force [N]", continuous_force: "Cont. Force [N]", coil_weight: "Coil Wt. [kg]", motor_constant: "Motor Const. [N/√W]", thermal_resistance: "Therm. Res. [°C/W]", force_constant: "Force Const. [N/A_pk]", bemf_constant: "BEMF Const. [V/(m/s)]", resistance: "Resistance (L-L) [Ω]"};
+const calcMethods = {
+    'time_dist': { name: "From Time & Distance", inputs: ['distance', 'move_time', 'ramp_perc'], func: calculateFromTimeDist },
+    'vel_dist_pad': { name: "From Vel, Dist & Ramp %", inputs: ['distance', 'v_max', 'ramp_perc'], func: calculateFromVelDistPad },
+    'vel_dist_time': { name: "From Vel, Dist & Time", inputs: ['distance', 'v_max', 'move_time'], func: calculateFromVelDistTime },
+    'accel_vel_dist': { name: "From Accel, Vel & Dist", inputs: ['distance', 'a_peak', 'v_max'], func: calculateFromAccelVelDist },
+};
+let velocityChart; // Global variable for the chart instance
+
+// --- CORE FUNCTIONS ---
+function getValue(id) { return parseFloat(document.getElementById(id).value); }
+
+function calculate() {
+    const method = document.getElementById('calc_method').value;
+    const motionParams = calcMethods[method].func();
+    if (motionParams) {
+        performSizingAnalysis(motionParams);
+        drawVelocityChart(motionParams);
+    }
+}
+
+function performSizingAnalysis(params) {
+    const selectedName = document.getElementById('motor_select').value;
+    const motor = motorDatabase[selectedName];
+    if (!motor) { alert("Please select a motor."); return; }
+
+    const drive_voltage = getValue('drive_voltage');
+    const load_mass = getValue('load_mass');
+    const total_mass = load_mass + motor.coil_weight;
+    const friction_coeff = getValue('friction');
+    const angle_deg = getValue('angle');
+    const ambient_temp = getValue('ambient_temp');
+    const dwell_time = params.dwell_time || 0;
+
+    const g = 9.81;
+    const angle_rad = angle_deg * (Math.PI / 180);
+    const f_friction = friction_coeff * total_mass * g * Math.cos(angle_rad);
+    const f_gravity = total_mass * g * Math.sin(angle_rad);
+    const f_force_accel = (total_mass * params.a_peak) + f_friction + f_gravity;
+    const f_force_const_vel = f_friction + f_gravity;
+    const f_force_decel = (total_mass * -params.a_peak) + f_friction + f_gravity;
+    
+    const f_peak_application = Math.max(Math.abs(f_force_accel), Math.abs(f_force_const_vel), Math.abs(f_force_decel));
+    const total_cycle_time = params.t_accel + params.t_const_vel + params.t_decel + dwell_time;
+    const f_rms_squared_sum = (f_force_accel**2 * params.t_accel) + (f_force_const_vel**2 * params.t_const_vel) + (f_force_decel**2 * params.t_decel);
+    const f_rms = (total_cycle_time > 0) ? Math.sqrt(f_rms_squared_sum / total_cycle_time) : 0;
+
+    const power_dissipated = motor.motor_constant > 0 ? (f_rms / motor.motor_constant)**2 : 0;
+    const temp_rise = power_dissipated * motor.thermal_resistance;
+    const final_temp = ambient_temp + temp_rise;
+
+    const peak_current = motor.force_constant > 0 ? f_peak_application / motor.force_constant : 0;
+    const bemf_at_max_v = motor.bemf_constant * params.v_max;
+    const required_voltage = bemf_at_max_v + (peak_current * motor.resistance);
+
+    const checks = {
+        peak_force: { pass: f_peak_application <= motor.peak_force, value: f_peak_application, limit: motor.peak_force, unit: "N" },
+        rms_force: { pass: f_rms <= motor.continuous_force, value: f_rms, limit: motor.continuous_force, unit: "N" },
+        temp: { pass: final_temp <= 125, value: final_temp, limit: 125, unit: "°C" },
+        voltage: { pass: required_voltage <= drive_voltage, value: required_voltage, limit: drive_voltage, unit: "V" }
+    };
+    const all_passed = Object.values(checks).every(c => c.pass);
+    
+    document.getElementById('details_container').classList.remove('hidden');
+    document.getElementById('results').classList.remove('hidden');
+
+    displayResult('peak_force_result', 'Peak Force', checks.peak_force);
+    displayResult('rms_force_result', 'RMS Force', checks.rms_force);
+    displayResult('temp_result', 'Final Coil Temp', checks.temp);
+    displayResult('voltage_result', 'Required Voltage', checks.voltage);
+    
+    const verdict_div = document.getElementById('final_verdict');
+    verdict_div.innerHTML = `<span class="result-label">Final Verdict</span><span>Sizing ${all_passed ? 'PASSED' : 'FAILED'}</span>`;
+    verdict_div.className = `result-item ${all_passed ? 'pass' : 'fail'}`;
+
+    const accuracy_warning_div = document.getElementById('accuracy_warning');
+    if (ambient_temp === 20 && final_temp > 40) {
+        accuracy_warning_div.textContent = "Warning: Final coil temperature is >20°C above the 20°C ambient. This may impact stage accuracy.";
+        accuracy_warning_div.classList.remove('hidden');
+    } else {
+        accuracy_warning_div.classList.add('hidden');
+    }
+}
+
+// --- MOTION CALCULATION MODES ---
+function calculateFromTimeDist() {
+    const distance = getValue('distance');
+    const move_time = getValue('move_time');
+    let ramp_perc = getValue('ramp_perc') / 100;
+    if (move_time <= 0) { alert("Move Time must be greater than zero."); return null; }
+    if (ramp_perc * 2 > 1.0) { ramp_perc = 0.5; document.getElementById('ramp_perc').value = 50; alert("Ramp time cannot exceed 50%. Setting to 50%."); }
+    
+    const t_accel = move_time * ramp_perc;
+    const t_const_vel = Math.max(0, move_time - (2 * t_accel));
+    const v_max_denom = t_const_vel + t_accel;
+    if (v_max_denom === 0) { alert("Move Time is too short to calculate velocity."); return null; }
+    const v_max = distance / v_max_denom;
+    const avg_accel = (t_accel > 0) ? (v_max / t_accel) : 0;
+    const a_peak = (document.getElementById('profile_type').value === 'sinusoidal') ? (avg_accel * (Math.PI / 2)) : avg_accel;
+    
+    return { a_peak, v_max, t_accel, t_const_vel, t_decel: t_accel, dwell_time: getValue('dwell_time') };
+}
+
+function calculateFromVelDistPad() {
+    const distance = getValue('distance');
+    const v_max = getValue('v_max');
+    let ramp_perc = getValue('ramp_perc') / 100;
+    if (v_max <= 0) { alert("Max Velocity must be greater than zero."); return null; }
+    if (ramp_perc >= 0.5) { ramp_perc = 0.499; document.getElementById('ramp_perc').value = 49.9; alert("Ramp percentage must be less than 50%. Setting to 49.9%."); }
+
+    const move_time_denom = v_max * (1 - ramp_perc);
+    if(move_time_denom === 0) { alert("Inputs result in division by zero. Check Velocity and Ramp %."); return null; }
+    const move_time = distance / move_time_denom;
+    const t_accel = move_time * ramp_perc;
+    const t_const_vel = Math.max(0, move_time - (2 * t_accel));
+    const avg_accel = (t_accel > 0) ? (v_max / t_accel) : 0;
+    const a_peak = (document.getElementById('profile_type').value === 'sinusoidal') ? (avg_accel * (Math.PI / 2)) : avg_accel;
+
+    return { a_peak, v_max, t_accel, t_const_vel, t_decel: t_accel, dwell_time: getValue('dwell_time') };
+}
+
+function calculateFromVelDistTime() {
+    const distance = getValue('distance');
+    const v_max_req = getValue('v_max');
+    const move_time = getValue('move_time');
+    if (v_max_req <= 0 || move_time <= 0 || distance <= 0) { alert("Distance, Velocity and Move Time must be greater than zero."); return null; }
+
+    const t_accel_if_trap = move_time - (distance / v_max_req);
+    const t_const_vel_if_trap = move_time - 2 * t_accel_if_trap;
+    
+    let t_accel, t_const_vel, v_max, avg_accel;
+
+    if (t_const_vel_if_trap >= -1e-9) { // It's a valid trapezoid (with tolerance)
+        t_accel = t_accel_if_trap;
+        t_const_vel = t_const_vel_if_trap;
+        v_max = v_max_req;
+        if(t_accel === 0) { alert("Move is 100% constant velocity, acceleration is infinite. Please adjust inputs."); return null; }
+        avg_accel = v_max / t_accel;
+    } else { // It must be a triangular move (Vmax is not reached)
+        t_accel = move_time / 2;
+        t_const_vel = 0;
+        if(t_accel === 0) { alert("Move time cannot be zero."); return null; }
+        avg_accel = distance / (t_accel * t_accel);
+        v_max = avg_accel * t_accel;
+    }
+
+    const a_peak = (document.getElementById('profile_type').value === 'sinusoidal') ? (avg_accel * (Math.PI / 2)) : avg_accel;
+    return { a_peak, v_max, t_accel, t_const_vel, t_decel: t_accel, dwell_time: getValue('dwell_time') };
+}
+
+function calculateFromAccelVelDist() {
+    const distance = getValue('distance');
+    const a_peak_in = getValue('a_peak');
+    let v_max_in = getValue('v_max');
+    if (a_peak_in <= 0 || v_max_in <= 0 || distance <= 0) { alert("Distance, Acceleration and Velocity must be greater than zero."); return null; }
+    
+    const ramp_type = document.getElementById('profile_type').value;
+    const a_peak = a_peak_in;
+    const avg_accel = (ramp_type === 'sinusoidal') ? a_peak / (Math.PI / 2) : a_peak;
+
+    if (avg_accel === 0) { alert("Acceleration cannot be zero."); return null; }
+    const t_accel_to_reach_vmax = v_max_in / avg_accel;
+    const dist_in_ramps = v_max_in * t_accel_to_reach_vmax;
+    
+    let t_accel, t_const_vel, final_v_max;
+
+    if (distance < dist_in_ramps) { // Triangular move, Vmax not reached
+        t_accel = Math.sqrt(distance / avg_accel);
+        final_v_max = avg_accel * t_accel;
+        t_const_vel = 0;
+    } else { // Trapezoidal move
+        t_accel = t_accel_to_reach_vmax;
+        final_v_max = v_max_in;
+        if (final_v_max === 0) { alert("Max velocity cannot be zero."); return null; }
+        t_const_vel = (distance - dist_in_ramps) / final_v_max;
+    }
+    
+    return { a_peak, v_max: final_v_max, t_accel, t_const_vel, t_decel: t_accel, dwell_time: getValue('dwell_time') };
+}
+
+
+// --- UI INITIALIZATION AND UPDATES ---
+function populateMotors() { const select = document.getElementById('motor_select'); for (const name in motorDatabase) { const option = document.createElement('option'); option.value = name; option.textContent = name; select.appendChild(option); } }
+function populateCalcMethods() { const select = document.getElementById('calc_method'); for (const key in calcMethods) { const option = document.createElement('option'); option.value = key; option.textContent = calcMethods[key].name; select.appendChild(option); } }
+
+function updateMotorSelection() {
+    const selectedName = document.getElementById('motor_select').value; const motor = motorDatabase[selectedName]; const specPanel = document.getElementById('spec-panel'); specPanel.innerHTML = `<h3>${selectedName}</h3>`; if (!motor) return;
+    for(const key in motor) { const item = document.createElement('div'); item.className = 'spec-item'; item.innerHTML = `<span class="spec-label">${paramLabels[key] || key}:</span> <span class="spec-value">${motor[key]}</span>`; specPanel.appendChild(item); }
+    const coilWeightInput = document.getElementById('coil_weight'); coilWeightInput.value = motor.coil_weight; coilWeightInput.style.backgroundColor = '#d4edda'; setTimeout(() => { coilWeightInput.style.backgroundColor = '#e9ecef'; }, 1000);
+}
+
+const allInputs = {
+    distance: `<div class="input-group"><label for="distance">Move Distance [m]</label><input id="distance" type="number" value="0.5"></div>`,
+    move_time: `<div class="input-group"><label for="move_time">Total Move Time [s]</label><input id="move_time" type="number" value="1"></div>`,
+    ramp_perc: `<div class="input-group"><label for="ramp_perc">Ramp Time [% of move time]</label><input id="ramp_perc" type="number" value="33.33"></div>`,
+    v_max: `<div class="input-group"><label for="v_max">Max Velocity [m/s]</label><input id="v_max" type="number" value="0.75"></div>`,
+    a_peak: `<div class="input-group"><label for="a_peak">Peak Acceleration [m/s²]</label><input id="a_peak" type="number" value="5"></div>`,
+    dwell_time: `<div class="input-group"><label for="dwell_time">Dwell Time (after move) [s]</label><input id="dwell_time" type="number" value="0.5"></div>`,
+};
+
+function updateInputFields() {
+    const methodKey = document.getElementById('calc_method').value;
+    const requiredInputs = calcMethods[methodKey].inputs;
+    const grid = document.getElementById('motion-inputs-grid');
+    grid.innerHTML = ''; // Clear old inputs
+    requiredInputs.forEach(inputKey => { grid.innerHTML += allInputs[inputKey]; });
+    grid.innerHTML += allInputs['dwell_time']; // Dwell time is always needed
+}
+
+function displayResult(elementId, label, check) { const div = document.getElementById(elementId); div.innerHTML = `<span class="result-label">${label}</span><span>${check.value.toFixed(2)} / ${check.limit.toFixed(2)} ${check.unit}</span>`; div.className = `result-item ${check.pass ? 'pass' : 'fail'}`; }
+
+function drawVelocityChart(params) {
+    document.getElementById('chart-container').classList.remove('hidden');
+    const ctx = document.getElementById('velocityChart').getContext('2d');
+    
+    const t1 = params.t_accel;
+    const t2 = t1 + params.t_const_vel;
+    const t3 = t2 + params.t_decel;
+
+    const labels = [0, t1, t2, t3];
+    const data = [0, params.v_max, params.v_max, 0];
+
+    // To make the chart look good, we add intermediate points for sinusoidal ramps
+    if (document.getElementById('profile_type').value === 'sinusoidal' && t1 > 0) {
+        const sineLabels = [0];
+        const sineData = [0];
+        const steps = 10;
+        // Accel phase
+        for (let i = 1; i <= steps; i++) {
+            const time_step = i * t1 / steps;
+            sineLabels.push(time_step);
+            sineData.push(params.v_max * 0.5 * (1 - Math.cos(Math.PI * time_step / t1)));
+        }
+        // Const vel phase
+        sineLabels.push(t2);
+        sineData.push(params.v_max);
+        // Decel phase
+        for (let i = 1; i <= steps; i++) {
+            const time_step = i * params.t_decel / steps;
+            sineLabels.push(t2 + time_step);
+            sineData.push(params.v_max * 0.5 * (1 + Math.cos(Math.PI * time_step / params.t_decel)));
+        }
+         labels = sineLabels;
+         data = sineData;
+    }
+    
+    if (velocityChart) {
+        velocityChart.data.labels = labels;
+        velocityChart.data.datasets[0].data = data;
+        velocityChart.update();
+    } else {
+        velocityChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Velocity',
+                    data: data,
+                    borderColor: 'rgb(0, 123, 255)',
+                    backgroundColor: 'rgba(0, 123, 255, 0.1)',
+                    fill: true,
+                    tension: 0.1
+                }]
+            },
+            options: {
+                scales: {
+                    x: { title: { display: true, text: 'Time (s)' } },
+                    y: { title: { display: true, text: 'Velocity (m/s)' }, beginAtZero: true }
+                }
+            }
+        });
+    }
+}
+
+
+window.onload = () => {
+    populateMotors();
+    populateCalcMethods();
+    updateMotorSelection();
+    updateInputFields();
+};
+</script>
+</body>
+</html>
